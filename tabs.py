@@ -6,7 +6,7 @@ from telemetry import plot_sample
 
 import charts
 from helpers import (
-    COLUMNS_PT, NO_TYPE, QUANTITY_PT, TYPE_PT, anomalies_table, availability_pct, daily_consumption, fmt_pct,
+    COLUMNS_PT, NO_TYPE, QUANTITY_PT, TYPE_PT, anomalies_table, daily_consumption, fmt_pct,
     hourly_dataframe, human_age, median_interval_s, month_projection, primary_type, readings_csv,
     reasons_text, rssi_label, today_vs_yesterday, type_label, type_summary, types_text,
     validation_csv, validation_dataframe, validation_summary, validation_table,
@@ -85,7 +85,7 @@ def overview(ctx, d):
         ("Energia total", f"{latest['energy']:.3f} kWh", "database"),
     ])
 
-    section(f"Resumo dos últimos 15 minutos" if d["short_window"] else f"Resumo das últimas {hours_int} h", "bars")
+    section("Resumo dos últimos 15 minutos" if d["short_window"] else f"Resumo das últimas {hours_int} h", "bars")
     kwh = summary["energy_kwh"] or 0.0
     cards([
         ("Consumo", f"{kwh:.3f} kWh", "bars"),

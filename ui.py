@@ -6,6 +6,7 @@ from pathlib import Path
 import streamlit as st
 
 from icons import svg
+from presentation import DeviceState, visible_table_columns
 
 ASSETS = Path(__file__).parent / "assets"
 BANNER_ICONS = {"ok": "check", "warn": "alert", "danger": "x", "info": "info"}
@@ -24,18 +25,53 @@ def brand() -> None:
     md(f'<div class="eg-brand"><img src="data:image/png;base64,{logo_b64()}" alt=""/><span>EnergyGuard</span></div>')
 
 
-def header(device: str, online: bool, updated: str) -> None:
-    kind, label = ("ok", "Online") if online else ("danger", "Offline")
+def header(device: str, state: DeviceState, updated: str, last_reading: str = "") -> None:
+    """High-visibility device state; API reading age is not proof of a physical link."""
+    kind = state.kind
     md(
         '<div class="eg-header">'
-        f'<img class="eg-logo" src="data:image/png;base64,{logo_b64()}" alt="EnergyGuard"/>'
+        f'<img class="eg-logo" src="data:image/png;base64,{logo_b64()}" alt="Logotipo EnergyGuard"/>'
         '<div class="eg-head-text"><div class="eg-title">EnergyGuard</div>'
-        f'<div class="eg-sub">Monitoramento inteligente de energia · {html.escape(device)}</div></div>'
+        f'<div class="eg-sub">Monitoramento de energia · {html.escape(str(device))}</div></div>'
         '<div class="eg-head-right">'
-        f'<span class="eg-pill {kind}"><span class="eg-dot"></span>{label}</span>'
-        f'<span class="eg-updated">Atualizado às {html.escape(updated)}</span>'
+        f'<span class="eg-pill {kind}"><span class="eg-dot"></span>{html.escape(state.label)}</span>'
+        f'<span class="eg-updated">Painel atualizado às {html.escape(updated)}</span>'
         "</div></div>"
     )
+    connection_panel(state, last_reading)
+
+
+def connection_panel(state: DeviceState | None, last_reading: str = "", api_error: bool = False) -> None:
+    if api_error:
+        kind, title, description = (
+            "danger", "Não é possível verificar o ESP32",
+            "A API está indisponível. Isso não confirma que o ESP32 está desconectado."
+        )
+    elif state is None:
+        kind, title, description = (
+            "info", "Nenhuma leitura recebida",
+            "Conecte o ESP32 à energia e ao Wi-Fi e confirme a configuração da API."
+        )
+    else:
+        kind, title, description = state.kind, state.label, state.detail
+    icon = {"ok": "check", "warn": "alert", "danger": "x", "info": "info"}[kind]
+    suffix = f" · Última leitura: {html.escape(last_reading)}" if last_reading else ""
+    md(
+        f'<div class="eg-connection-panel {kind}" role="status" aria-live="polite">'
+        f'<div class="eg-connection-title">{svg(icon, 22)}<span>{html.escape(title)}</span></div>'
+        f'<div class="eg-connection-description">{html.escape(description)}{suffix}</div>'
+        "</div>"
+    )
+
+
+def stale_data_note() -> None:
+    md('<div class="eg-data-note" role="note"><strong>Atenção:</strong> '
+       'os valores abaixo são da última leitura recebida, não medições em tempo real.</div>')
+
+
+def simple_help(text: str) -> None:
+    md(f'<div class="eg-simple-help" role="note">{svg("info", 18)} '
+       f'{html.escape(text)}</div>')
 
 
 def section(title: str, icon: str = "chart") -> None:
@@ -118,7 +154,13 @@ def progress(fraction: float, text: str) -> None:
 
 
 def table(df) -> None:
-    md('<div class="eg-scroll">' + df.to_html(index=False, border=0, classes="eg-table", escape=True) + "</div>")
+    """Native sortable, full-screen capable table; full mode preserves every column."""
+    mode = st.session_state.get("table_mode", "Completa")
+    displayed = df.loc[:, visible_table_columns(df.columns, mode)]
+    st.dataframe(displayed, hide_index=True, use_container_width=True,
+                 height=min(440, max(138, 40 + len(displayed) * 35)))
+    if mode == "Resumida" and list(displayed.columns) != list(df.columns):
+        st.caption("Modo resumido: mude para 'Completa' em Aparência para ver todas as colunas.")
 
 
 def plot(fig, key: str) -> None:

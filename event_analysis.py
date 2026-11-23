@@ -160,7 +160,7 @@ def event_table(events):
     return pd.DataFrame(events)
 
 
-def device_diagnostics(rows, interval_s, now=None):
+def device_diagnostics(rows, interval_s=5, now=None):
     samples = valid_samples(rows)
     if not samples:
         return {"state": "Sem dados", "last": None, "gap_count": 0, "invalid": 0}

@@ -60,3 +60,14 @@ A API (porta 8000) continua acessível apenas no seu PC e na sua rede.
 
 Sem `DASHBOARD_PASSWORD` o dashboard abre sem senha, então **nunca abra o túnel sem definir a senha**.
 Depois de 5 senhas erradas o login trava por 1 minuto.
+
+
+## Correções de confiabilidade
+
+- O resumo de 15 minutos é estimado pela integração das amostras; intervalos grandes não são interpolados.
+- Cobertura de leituras mede intervalos de reporte observados, não uptime físico.
+- Projeção mensal é omitida quando faltam dados do começo do mês.
+- Consultas incrementais exigem IDs estáveis e timestamps ISO consistentes na API.
+- Regras sugeridas evitam duplicação sequencial; idempotência concorrente exige suporte do backend.
+- Qualidade da API agregada por hora não é exibida na janela de 15 minutos.
+- Testes: `pip install -r requirements-dev.txt && pytest -q && ruff check .`.

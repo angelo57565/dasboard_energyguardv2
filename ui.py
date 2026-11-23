@@ -109,7 +109,7 @@ def hero(status: tuple[str, str, str], kpis: list[dict]) -> None:
 
 
 def progress(fraction: float, text: str) -> None:
-    pct = max(0.0, fraction) * 100
+    pct = max(0.0, fraction) * 100 if fraction == fraction else 0.0
     over = " over" if fraction > 1 else ""
     md(
         f'<div class="eg-bar{over}"><div style="width:{min(pct, 100):.1f}%"></div></div>'

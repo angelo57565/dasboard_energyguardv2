@@ -1,9 +1,10 @@
 """Funcoes de dados do dashboard (sem Streamlit, faceis de testar)."""
 import math
+import os
 
 import pandas as pd
 
-TZ = "America/Sao_Paulo"
+TZ = os.getenv("ENERGYGUARD_TIMEZONE", "America/Sao_Paulo")
 
 COLUMNS_PT = {
     "id": "ID",
@@ -127,8 +128,11 @@ def readings_csv(rows: list[dict]) -> bytes:
 
 
 def age_seconds(created_at_iso: str) -> float:
-    ts = pd.to_datetime(created_at_iso, utc=True)
-    return (pd.Timestamp.now(tz="UTC") - ts).total_seconds()
+    ts = pd.to_datetime(created_at_iso, utc=True, errors="coerce")
+    if pd.isna(ts):
+        return math.inf
+    age = (pd.Timestamp.now(tz="UTC") - ts).total_seconds()
+    return age if age >= -5 else math.inf
 
 
 def human_age(seconds: float) -> str:
@@ -173,6 +177,9 @@ def month_projection(hourly: pd.DataFrame, now_local: pd.Timestamp) -> tuple[flo
     so_far = float(hourly.loc[hourly["period"] >= start, "kwh"].sum())
     days_in_month = int(now_local.days_in_month)
     elapsed_days = max((now_local - start).total_seconds() / 86400.0, 1 / 24)
+    observed = hourly.loc[(hourly["period"] >= start) & (hourly["period"] <= now_local), "period"]
+    if observed.empty or (observed.min() - start).total_seconds() > 2 * 3600:
+        return so_far, float("nan"), days_in_month
     return so_far, so_far / elapsed_days * days_in_month, days_in_month
 
 
@@ -183,7 +190,8 @@ def validation_dataframe(rows: list[dict]) -> pd.DataFrame:
         return df
     df["created_at"] = pd.to_datetime(df["created_at"], utc=True).dt.tz_convert(TZ)
     df["erro"] = df["measured"] - df["reference"]
-    df["erro_pct"] = df["erro"] / df["reference"] * 100.0
+    reference = pd.to_numeric(df["reference"], errors="coerce")
+    df["erro_pct"] = df["erro"].div(reference.where(reference.abs() > 1e-9)) * 100.0
     return df.sort_values("created_at", ascending=False).reset_index(drop=True)
 
 
@@ -249,3 +257,33 @@ def median_interval_s(df: pd.DataFrame) -> float | None:
 
 def fmt_pct(x: float | None, nd: int = 1) -> str:
     return "—" if x is None or (isinstance(x, float) and math.isnan(x)) else f"{x:.{nd}f}%"
+
+
+def reporting_coverage(df: pd.DataFrame, start, end, interval_s: float) -> float:
+    """Percentage of distinct expected reporting slots with a sample (not device uptime)."""
+    if df is None or df.empty or "created_at" not in df:
+        return 0.0
+    start, end = pd.Timestamp(start).tz_convert("UTC"), pd.Timestamp(end).tz_convert("UTC")
+    seconds = (end - start).total_seconds()
+    step = max(1.0, float(interval_s))
+    if seconds <= 0:
+        return 0.0
+    ts = pd.to_datetime(df["created_at"], utc=True, errors="coerce").dropna()
+    ts = ts[(ts >= start) & (ts < end)]
+    slots = set(((ts - start).dt.total_seconds() / step).astype(int))
+    expected = math.ceil(seconds / step)
+    return 100.0 * min(len(slots), expected) / expected
+
+
+def short_summary(df: pd.DataFrame) -> dict:
+    """Sampled 15-minute approximation; skips large transmission gaps."""
+    if df is None or df.empty:
+        return dict(energy_kwh=0.0, power_avg=0.0, power_max=0.0, anomalies=0)
+    power = pd.to_numeric(df["power"], errors="coerce").fillna(0).clip(lower=0)
+    gaps = df["created_at"].diff().dt.total_seconds().fillna(0).clip(lower=0) / 3600
+    median = gaps[gaps > 0].median()
+    if pd.notna(median):
+        gaps = gaps.clip(upper=3 * median)
+    energy = float(((((power + power.shift()) / 2).fillna(0)) * gaps).sum() / 1000)
+    return dict(energy_kwh=energy, power_avg=float(power.mean()), power_max=float(power.max()),
+                anomalies=int(df["is_anomaly"].fillna(False).sum()))

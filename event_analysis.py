@@ -4,7 +4,6 @@ Durations are observed sample spans, never proof of continuous outage or damage.
 Does not send alerts or write to the backend.
 """
 from collections import Counter
-from datetime import datetime
 from math import isfinite
 
 import pandas as pd

@@ -4,24 +4,24 @@ from icons import TAB_ICONS, mask_url
 
 THEMES = {
     "dark": dict(
-        bg="#070B14", surface="#0D1424", surface2="#131C31", field="#101A2E", text="#EAF0FA", muted="#9FB0CB",
-        border="#1F2C47", accent="#3AA0FF", accent2="#FFC83D", accent_text="#04111F", focus="#FFC83D",
-        ok="#34D399", ok_bg="#0B2A22", warn="#FFC83D", warn_bg="#2D2408", danger="#FF7A8A", danger_bg="#33141A",
+        bg="#080D18", surface="#121C2E", surface2="#19253A", field="#172238", text="#EDF3FD", muted="#A9BED7",
+        border="#30415D", accent="#4CA7FF", accent2="#FFD166", accent_text="#051329", focus="#FFD166",
+        ok="#36D9A0", ok_bg="#0B2E28", warn="#FFD166", warn_bg="#322809", danger="#FF8797", danger_bg="#371923",
         info="#3AA0FF", info_bg="#0E2340", shadow="0 10px 28px rgba(0,0,0,.38)", bw="1px", fs="1rem", radius="14px",
     ),
     "light": dict(
-        bg="#FFFFFF", surface="#F4F6FA", surface2="#E9EEF7", field="#FFFFFF", text="#000000", muted="#1F2937",
-        border="#0A0A0A", accent="#0B3DDB", accent2="#8A4B00", accent_text="#FFFFFF", focus="#FF6A00",
-        ok="#006B3C", ok_bg="#E2F6EC", warn="#7A4300", warn_bg="#FFF0C7", danger="#9B0000", danger_bg="#FFE3E3",
+        bg="#F5F7FC", surface="#FFFFFF", surface2="#EBF0F8", field="#FFFFFF", text="#15243A", muted="#405673",
+        border="#BCC9DA", accent="#175CD3", accent2="#8C5600", accent_text="#FFFFFF", focus="#C04A00",
+        ok="#096B50", ok_bg="#E0F5ED", warn="#8C5600", warn_bg="#FFF0C7", danger="#A42237", danger_bg="#FFE8EC",
         info="#0B3DDB", info_bg="#E3EAFF", shadow="none", bw="2px", fs="1.06rem", radius="12px",
     ),
 }
 
 PLOT = {
-    "dark": dict(template="plotly_dark", text="#EAF0FA", grid="#1F2C47", paper="rgba(0,0,0,0)",
+    "dark": dict(template="plotly_dark", text="#EAF0FA", grid="#30415D", paper="rgba(0,0,0,0)",
                  voltage="#3AA0FF", current="#FFC83D", power="#34D399", anomaly="#FF5C7A", width=2.0,
                  apparent="#B794F6", reactive="#F687B3", bar="#3AA0FF", fill=0.10),
-    "light": dict(template="plotly_white", text="#000000", grid="#9AA3B2", paper="#FFFFFF",
+    "light": dict(template="plotly_white", text="#000000", grid="#BCC9DA", paper="#FFFFFF",
                   voltage="#0B3DDB", current="#8A4B00", power="#006B3C", anomaly="#C00000", width=2.8,
                   apparent="#5B21B6", reactive="#9D174D", bar="#0B3DDB", fill=0.08),
 }
@@ -184,5 +184,68 @@ def _tab_icon_css() -> str:
     return "\n".join(rules)
 
 
-def build_css(name: str) -> str:
-    return "<style>" + _CSS.substitute(THEMES[name]) + "\n" + _tab_icon_css() + "</style>"
+_UX_CSS = r"""
+/* Consistent scalable typography and keyboard accessibility */
+html, body, .stApp { font-size: VAR_FONT_SIZE !important; }
+.stApp [data-testid="stMarkdownContainer"], .stApp label, .stApp input, .stApp textarea,
+.stApp button, .stApp [data-baseweb="select"], .stApp [data-testid="stDataFrame"] {
+  font-size: 1rem !important;
+}
+.stApp [data-testid="stWidgetLabel"], .stApp [data-testid="stCaptionContainer"] {
+  font-size: .91rem !important;
+}
+.stApp button { min-height: 44px; }
+.stApp :focus-visible { outline: 3px solid VAR_FOCUS !important; outline-offset: 3px; }
+.eg-hero .eg-kpi-val { font-size: clamp(1.5rem, 2.3vw, 2.25rem); white-space: normal; overflow-wrap: anywhere; }
+.eg-card .eg-value { font-size: 1.28rem; white-space: normal; overflow-wrap: anywhere; }
+.eg-section { font-size: 1.16rem; }
+.eg-title { font-size: clamp(1.25rem, 2.8vw, 1.75rem); }
+.eg-header { border-radius: 18px; padding: 18px 20px; }
+.eg-card, .eg-kpi { border-radius: 15px; }
+.eg-status { min-height: 148px; }
+.eg-connection-info { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.eg-connection-info strong { color: VAR_TEXT; font-weight: 750; }
+.eg-connection-panel { padding: 16px 20px; border: 2px solid VAR_BORDER; border-radius: 16px;
+  background: VAR_SURFACE; margin: 12px 0 18px; }
+.eg-connection-panel.ok { border-left: 5px solid VAR_OK; }
+.eg-connection-panel.warn { border-left: 5px solid VAR_WARN; }
+.eg-connection-panel.danger { border-left: 5px solid VAR_DANGER; }
+.eg-connection-panel.info { border-left: 5px solid VAR_ACCENT; }
+.eg-connection-title { display: flex; align-items: center; gap: 9px; font-size: 1.09rem; font-weight: 800; }
+.eg-connection-description { color: VAR_MUTED; margin-top: 6px; line-height: 1.6; }
+.eg-secondary { color: VAR_MUTED; font-size: .91rem; }
+.eg-timestamp { font-variant-numeric: tabular-nums; }
+.eg-simple-help { padding: 10px 14px; background: VAR_SURFACE2;
+  border-radius: 12px; margin: 10px 0; color: VAR_TEXT; }
+.eg-data-note { border-left: 4px solid VAR_WARN; padding: 9px 12px;
+  background: VAR_SURFACE2; margin: 10px 0; color: VAR_TEXT; border-radius: 7px; }
+[data-testid="stDataFrame"] { border: 1px solid VAR_BORDER; border-radius: 12px; overflow: hidden; }
+[data-testid="stSidebar"] [data-testid="stWidgetLabel"] { font-weight: 700; }
+@media (max-width: 640px) {
+  .eg-header { padding: 14px; }
+  .eg-status { min-height: auto; }
+  .eg-hero { grid-template-columns: 1fr; }
+  .eg-hero .eg-kpi:last-child { grid-column: auto; }
+  .eg-grid.eg-fixed { grid-template-columns: repeat(1, minmax(0, 1fr)); }
+}
+"""
+
+
+def build_css(name: str, font_px: int = 16) -> str:
+    """Theme CSS with a per-session user-selected scalable type size."""
+    if name not in THEMES:
+        name = "dark"
+    font_px = font_px if font_px in (16, 18, 20) else 16
+    tokens = THEMES[name]
+    extra = (_UX_CSS.replace("VAR_FONT_SIZE", f"{font_px}px")
+             .replace("VAR_FOCUS", tokens["focus"])
+             .replace("VAR_TEXT", tokens["text"])
+             .replace("VAR_MUTED", tokens["muted"])
+             .replace("VAR_BORDER", tokens["border"])
+             .replace("VAR_SURFACE2", tokens["surface2"])
+             .replace("VAR_SURFACE", tokens["surface"])
+             .replace("VAR_OK", tokens["ok"])
+             .replace("VAR_WARN", tokens["warn"])
+             .replace("VAR_DANGER", tokens["danger"])
+             .replace("VAR_ACCENT", tokens["accent"]))
+    return "<style>" + _CSS.substitute(tokens) + "\n" + _tab_icon_css() + "\n" + extra + "</style>"

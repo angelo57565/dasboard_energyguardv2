@@ -71,3 +71,14 @@ Depois de 5 senhas erradas o login trava por 1 minuto.
 - Regras sugeridas evitam duplicação sequencial; idempotência concorrente exige suporte do backend.
 - Qualidade da API agregada por hora não é exibida na janela de 15 minutos.
 - Testes: `pip install -r requirements-dev.txt && pytest -q && ruff check .`.
+
+
+## Redesign UX/UI e acessibilidade
+
+A especificação por tela, os estados de conexão, as regras de tabelas e os critérios de aceitação estão em [docs/UX_UI_SPEC.md](docs/UX_UI_SPEC.md).
+
+Na barra lateral em **Aparência**, alterne **Escuro/Claro**, escolha a letra **Normal/Grande/Extra grande** e selecione tabelas **Resumidas/Completas**. O modo completo preserva todas as colunas exibidas pelo backend. A visualização é por sessão, e tema/fonte também podem ser compartilhados por URL (`?tema=claro&fonte=18`).
+
+O cabeçalho informa **ESP32 enviando leituras**, **com atraso** ou **sem novas leituras**, com base no horário da última leitura registrada na API. Isso não é uma medição física direta do estado do ESP32. Quando a API falha, o estado é indeterminado, não offline confirmado.
+
+O redesign preserva as seis abas, operações de alertas, avaliações de anomalias, validações, treinamento e os downloads CSV. A **Visão geral** e **Medições** ganharam tabelas nativas; **Consumo** possui tabelas horárias e diárias. Testes de regressão de apresentação em `tests/test_presentation.py`.

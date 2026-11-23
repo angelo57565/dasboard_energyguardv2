@@ -20,11 +20,11 @@ def _rgba(hex_color: str, alpha: float) -> str:
     return f"rgba({r},{g},{b},{alpha})"
 
 
-def _style(fig, theme: str, height: int):
+def _style(fig, theme: str, height: int, font_scale: float = 1.0):
     c = PLOT[theme]
     fig.update_layout(
         template=c["template"], paper_bgcolor=c["paper"], plot_bgcolor=c["paper"],
-        font=dict(color=c["text"], size=14), height=height, hovermode="x unified",
+        font=dict(color=c["text"], size=round(14 * font_scale)), height=height, hovermode="x unified",
         margin=dict(l=10, r=10, t=40, b=10), legend=dict(orientation="h", y=1.1),
     )
     fig.update_xaxes(gridcolor=c["grid"], linecolor=c["text"], linewidth=2, zeroline=False)
@@ -32,7 +32,7 @@ def _style(fig, theme: str, height: int):
     return fig
 
 
-def timeseries(df, which: str, mark_anomalies: bool, theme: str):
+def timeseries(df, which: str, mark_anomalies: bool, theme: str, font_scale: float = 1.0):
     c = PLOT[theme]
     names = DEFAULT_ROWS if which == "Tudo" else [which]
     fig = make_subplots(
@@ -51,10 +51,10 @@ def timeseries(df, which: str, mark_anomalies: bool, theme: str):
                                      showlegend=(row == 1),
                                      marker=dict(color=c["anomaly"], size=11, symbol="x", line=dict(width=2))),
                           row=row, col=1)
-    return _style(fig, theme, 230 + 200 * len(names))
+    return _style(fig, theme, 230 + 200 * len(names), font_scale)
 
 
-def score_chart(df, theme: str):
+def score_chart(df, theme: str, font_scale: float = 1.0):
     c = PLOT[theme]
     d = df.dropna(subset=["anomaly_score"])
     fig = go.Figure()
@@ -68,17 +68,17 @@ def score_chart(df, theme: str):
     fig.add_hline(y=0, line_dash="dash", line_color=c["text"], line_width=2,
                   annotation_text="abaixo de 0 = anomalia", annotation_position="bottom right")
     fig.update_layout(title="Score do modelo (menor = mais estranho)")
-    return _style(fig, theme, 320)
+    return _style(fig, theme, 320, font_scale)
 
 
-def bars(x, y, theme: str, title: str, ytitle: str = "kWh"):
+def bars(x, y, theme: str, title: str, ytitle: str = "kWh", font_scale: float = 1.0):
     c = PLOT[theme]
     fig = go.Figure(go.Bar(x=x, y=y, marker_color=c["bar"]))
     fig.update_layout(title=title, yaxis_title=ytitle)
-    return _style(fig, theme, 300)
+    return _style(fig, theme, 300, font_scale)
 
 
-def validation_scatter(df, quantity: str, theme: str):
+def validation_scatter(df, quantity: str, theme: str, font_scale: float = 1.0):
     c = PLOT[theme]
     d = df[df["quantity"] == quantity]
     top = max(d["reference"].max(), d["measured"].max()) * 1.05
@@ -88,13 +88,13 @@ def validation_scatter(df, quantity: str, theme: str):
     fig.add_trace(go.Scatter(x=d["reference"], y=d["measured"], mode="markers", name="Medidas",
                              marker=dict(color=c["voltage"], size=11)))
     fig.update_layout(xaxis_title="Instrumento de referência", yaxis_title="ESP32")
-    return _style(fig, theme, 360)
+    return _style(fig, theme, 360, font_scale)
 
 
-def rssi_chart(df, theme: str):
+def rssi_chart(df, theme: str, font_scale: float = 1.0):
     c = PLOT[theme]
     d = df.dropna(subset=["rssi"])
     fig = go.Figure(go.Scatter(x=d["created_at"], y=d["rssi"], mode="lines", name="RSSI",
                                line=dict(color=c["power"], width=c["width"])))
     fig.update_layout(title="Sinal Wi-Fi (dBm, mais perto de 0 = melhor)")
-    return _style(fig, theme, 280)
+    return _style(fig, theme, 280, font_scale)

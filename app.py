@@ -15,6 +15,7 @@ from client import Api
 from helpers import age_seconds, reporting_coverage, short_summary, to_dataframe
 from telemetry import incremental_readings
 from theme import build_css
+from presentation import FONT_SIZES, TABLE_MODES, device_state, status_time
 
 ASSETS = Path(__file__).parent / "assets"
 st.set_page_config(page_title="EnergyGuard", page_icon=Image.open(ASSETS / "favicon.png"), layout="wide")
@@ -41,14 +42,26 @@ with conn_slot:
 api = Api(api_url, api_key)
 
 with theme_slot:
+    st.subheader("Aparência")
     if "tema_radio" not in st.session_state:
         st.session_state["tema_radio"] = THEME_OPTIONS[1 if st.query_params.get("tema") == "claro" else 0]
     choice = st.radio("Tema", THEME_OPTIONS, horizontal=True, key="tema_radio")
     theme = "light" if choice == THEME_OPTIONS[1] else "dark"
     st.query_params["tema"] = "claro" if theme == "light" else "escuro"
 
+    if "font_size_choice" not in st.session_state:
+        selected_font = st.query_params.get("fonte", "16")
+        st.session_state["font_size_choice"] = next(
+            (label for label, pixels in FONT_SIZES.items() if str(pixels) == selected_font), "Normal"
+        )
+    selected_size = st.selectbox("Tamanho da letra", list(FONT_SIZES), key="font_size_choice")
+    font_px = FONT_SIZES[selected_size]
+    st.query_params["fonte"] = str(font_px)
+    st.selectbox("Visualização das tabelas", TABLE_MODES, index=1, key="table_mode",
+                 help="O modo completo mantém todas as colunas. Você pode ordenar e ampliar as tabelas.")
+
 with st.sidebar:
-    st.markdown(build_css(theme), unsafe_allow_html=True)
+    st.markdown(build_css(theme, font_px), unsafe_allow_html=True)
 with brand_slot:
     ui.brand()
 
@@ -102,11 +115,13 @@ hours = PERIODS[period_label]
 try:
     devices = api.get("/api/devices")
 except requests.RequestException as exc:
+    ui.connection_panel(None, api_error=True)
     ui.banner("danger", f"Não consegui falar com a API em {api_url}: {exc}")
     st.stop()
 
 if not devices:
-    ui.banner("info", "Nenhuma leitura recebida ainda. Ligue o ESP32 para começar.")
+    ui.connection_panel(None)
+    ui.banner("info", "Nenhum dispositivo ou leitura foi encontrado na API. Verifique a alimentação e o Wi-Fi do ESP32.")
     st.stop()
 
 with device_slot:
@@ -116,6 +131,7 @@ ctx = SimpleNamespace(
     api=api, device=device, theme=theme, auto=auto,
     tariff=float(st.session_state.cfg_tariff), nominal=int(st.session_state.cfg_nominal),
     goal=float(st.session_state.cfg_goal), interval=float(st.session_state.cfg_interval),
+    font_scale=font_px / 16.0,
 )
 
 
@@ -135,19 +151,22 @@ def render() -> None:
         anomalies = api.get("/api/anomalies", device_id=device, limit=200)
         model = api.get("/api/model/status")
     except requests.RequestException as exc:
+        ui.connection_panel(None, api_error=True)
         ui.banner("danger", f"Erro ao consultar a API: {exc}")
         return
 
     age = age_seconds(latest["created_at"])
-    online = age <= max(OFFLINE_AFTER_S, float(st.session_state.cfg_interval) * 3)
-    ui.header(device, online, datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%H:%M:%S"))
+    connection = device_state(age, ctx.interval)
+    online = connection.fresh
+    ui.header(device, connection, datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%H:%M:%S"),
+              status_time(latest.get("created_at")))
 
     coverage = reporting_coverage(df, since_dt, datetime.now(timezone.utc), ctx.interval)
     data = dict(latest=latest, rows=rows, df=df, summary=summary, anomalies=anomalies,
                 model=model, hours=hours, hours_int=hours_int, age=age, online=online,
-                coverage=coverage, short_window=hours < 1)
+                coverage=coverage, short_window=hours < 1, connection=connection)
 
-    t = st.tabs(["Início", "Gráficos", "Consumo", f"Anomalias ({len(anomalies)})", "Alertas", "Sistema"])
+    t = st.tabs(["Visão geral", "Medições", "Consumo", f"Anomalias ({len(anomalies)})", "Alertas", "Sistema"])
     with t[0]:
         tabs.overview(ctx, data)
     with t[1]:

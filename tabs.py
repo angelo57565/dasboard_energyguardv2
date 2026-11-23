@@ -6,12 +6,12 @@ from telemetry import plot_sample
 
 import charts
 from helpers import (
-    NO_TYPE, QUANTITY_PT, TYPE_PT, anomalies_table, availability_pct, daily_consumption, fmt_pct,
+    COLUMNS_PT, NO_TYPE, QUANTITY_PT, TYPE_PT, anomalies_table, daily_consumption, fmt_pct,
     hourly_dataframe, human_age, median_interval_s, month_projection, primary_type, readings_csv,
     reasons_text, rssi_label, today_vs_yesterday, type_label, type_summary, types_text,
     validation_csv, validation_dataframe, validation_summary, validation_table,
 )
-from ui import banner, cards, hero, plot, progress, rerun, section, table
+from ui import banner, cards, hero, plot, progress, rerun, section, simple_help, stale_data_note, table
 
 METRICS_PT = {
     "voltage": ("Tensão", "V"), "current": ("Corrente", "A"), "power": ("Potência", "W"),
@@ -46,7 +46,11 @@ def overview(ctx, d):
     hours_int = d["hours_int"]
 
     if not d["online"]:
-        status = ("danger", "Sem comunicação", f"Última leitura há {human_age(d['age'])}.")
+        state = d["connection"]
+        status = ("warn" if state.code == "delayed" else "danger",
+                  state.label, f"Última leitura há {human_age(d['age'])}." if pd.notna(d["age"]) and d["age"] != float("inf")
+                  else "Sem horário válido para a última leitura.")
+        stale_data_note()
     elif latest["voltage"] < 20 and latest["current"] > 0.15:
         status = ("warn", "Sem tensão detectada",
                   "O ZMPT101B está sem rede ou desligado. Potência, fator de potência e frequência "
@@ -55,7 +59,7 @@ def overview(ctx, d):
         status = ("warn", f"Anomalia: {types_text(latest)}",
                   f"Score {latest['anomaly_score']:.3f}. Veja a aba Anomalias.")
     else:
-        status = ("ok", "Operando normalmente", f"{summary['anomalies']} anomalia(s) nas últimas {hours_int} h.")
+        status = ("ok", "Leituras dentro do esperado", f"{summary['anomalies']} ocorrência(s) fora do padrão no período.")
 
     tail = df.tail(60) if not df.empty else df
 
@@ -70,6 +74,8 @@ def overview(ctx, d):
 
     s_va = latest["voltage"] * latest["current"]
     q_var = max(s_va ** 2 - latest["power"] ** 2, 0) ** 0.5
+    simple_help("Potência (W) indica o uso instantâneo. Consumo (kWh) é a energia acumulada no período. "
+                "Leituras fora do padrão precisam de análise; não são diagnóstico definitivo.")
     section("Detalhes da medição", "gauge")
     cards([
         ("Potência aparente", f"{s_va:.0f} VA", "gauge"),
@@ -79,7 +85,7 @@ def overview(ctx, d):
         ("Energia total", f"{latest['energy']:.3f} kWh", "database"),
     ])
 
-    section(f"Resumo dos últimos 15 minutos" if d["short_window"] else f"Resumo das últimas {hours_int} h", "bars")
+    section("Resumo dos últimos 15 minutos" if d["short_window"] else f"Resumo das últimas {hours_int} h", "bars")
     kwh = summary["energy_kwh"] or 0.0
     cards([
         ("Consumo", f"{kwh:.3f} kWh", "bars"),
@@ -88,18 +94,32 @@ def overview(ctx, d):
         ("Pico de potência", f"{summary['power_max'] or 0:.0f} W", "bolt"),
         ("Anomalias", str(summary["anomalies"]), "alert"),
     ])
+    st.caption("Custo estimado: consumo × tarifa configurada. O valor não substitui sua conta de energia.")
+    section("Últimas leituras", "database")
+    if df.empty:
+        banner("info", "Ainda não há leituras disponíveis nesse período.")
+    else:
+        recent = df.tail(25).iloc[::-1].copy().rename(columns={
+            **COLUMNS_PT, "apparent": "Potência aparente (VA)", "reactive": "Potência reativa (var)"
+        })
+        table(recent)
 
 
 def charts_tab(ctx, d):
     rows, df = d["rows"], d["df"]
     section("Medições ao longo do tempo", "chart")
+    st.caption("As linhas mostram valores registrados pelo sensor. Marcas em X indicam leituras incomuns.")
     c1, c2 = st.columns([3, 2])
     which = c1.radio("Mostrar", ["Tudo", *charts.SERIES], horizontal=True, key="serie")
     mark = c2.checkbox("Marcar anomalias", value=True, key="marcar")
     if df.empty:
         banner("info", "Sem leituras neste período.")
         return
-    plot(charts.timeseries(plot_sample(df), which, mark, ctx.theme), "grafico")
+    plot(charts.timeseries(plot_sample(df), which, mark, ctx.theme, ctx.font_scale), "grafico")
+    section("Tabela de medições do período", "database")
+    table(df.iloc[::-1].rename(columns={
+        **COLUMNS_PT, "apparent": "Potência aparente (VA)", "reactive": "Potência reativa (var)"
+    }))
     st.download_button("Baixar leituras (CSV)", readings_csv(rows),
                        file_name=f"leituras_{ctx.device}.csv", mime="text/csv", key="dl_leituras")
 
@@ -122,6 +142,7 @@ def consumption(ctx, d):
 
     delta = f"{(today - y_same) / y_same * 100:+.0f}% vs ontem" if y_same > 0.001 else "—"
     section("Hoje", "clock")
+    st.caption("Consumo em kWh é energia acumulada, diferente da potência instantânea (W).")
     cards([
         ("Hoje até agora", f"{today:.2f} kWh", "bolt"),
         ("Ontem até a mesma hora", f"{y_same:.2f} kWh", "clock"),
@@ -149,18 +170,24 @@ def consumption(ctx, d):
         st.caption("Defina uma meta mensal em Configurações para ver a barra de progresso.")
 
     last24 = hourly[hourly["period"] >= now - pd.Timedelta(hours=24)]
-    plot(charts.bars(last24["period"], last24["kwh"], ctx.theme, "Consumo por hora (últimas 24 h)"), "barras_hora")
+    plot(charts.bars(last24["period"], last24["kwh"], ctx.theme,
+                     "Consumo por hora (últimas 24 h)", font_scale=ctx.font_scale), "barras_hora")
     daily = daily_consumption(hourly).tail(14)
     plot(charts.bars(daily["day"].dt.strftime("%d/%m"), daily["kwh"], ctx.theme,
-                     "Consumo por dia (últimos 14 dias)"), "barras_dia")
+                     "Consumo por dia (últimos 14 dias)", font_scale=ctx.font_scale), "barras_dia")
+    section("Histórico de consumo por hora", "database")
+    table(hourly.iloc[::-1].rename(columns={"period": "Horário", "kwh": "Consumo (kWh)"}))
+    section("Consumo por dia", "database")
+    table(daily.iloc[::-1].rename(columns={"day": "Dia", "kwh": "Consumo (kWh)"}))
 
 
 def anomalies_tab(ctx, d):
     df, anomalies = d["df"], d["anomalies"]
+    st.caption("Anomalia significa uma leitura incomum segundo regras ou modelo, não uma falha confirmada.")
     if not d["model"]["ready"]:
         banner("warn", "O modelo ainda não foi treinado, então nada foi classificado. Veja Sistema, aba Modelo.")
     if not df.empty and "anomaly_score" in df and df["anomaly_score"].notna().any():
-        plot(charts.score_chart(plot_sample(df), ctx.theme), "grafico_score")
+        plot(charts.score_chart(plot_sample(df), ctx.theme, ctx.font_scale), "grafico_score")
 
     if not anomalies:
         banner("info", "Nenhuma anomalia registrada.")
@@ -168,7 +195,8 @@ def anomalies_tab(ctx, d):
         summary = type_summary(anomalies)
         section("Anomalias por tipo", "bars")
         plot(charts.bars(summary["Tipo"], summary["Total"], ctx.theme,
-                         "Ocorrências por tipo (últimas 200 anomalias)", ytitle="ocorrências"), "barras_tipo")
+                         "Ocorrências por tipo (últimas 200 anomalias)", ytitle="ocorrências",
+                         font_scale=ctx.font_scale), "barras_tipo")
         table(summary)
 
         options = ["Todos os tipos", *summary["Tipo"]]
@@ -241,6 +269,7 @@ def alerts_tab(ctx, d):
                        "Preencha o .env do backend para receber no celular.")
 
     section("Regras", "sliders")
+    st.caption("Regras enviam avisos quando uma medição ultrapassa o limite configurado.")
     if not rules:
         banner("info", "Nenhuma regra ainda. Crie uma abaixo ou use as sugeridas.")
     for rule in rules:
@@ -337,6 +366,7 @@ def quality_health(ctx, d):
         banner("info", "Sem leituras com a rede ligada neste período.")
 
     section("Saúde do ESP32", "cpu")
+    st.caption("A conexão é estimada pelas leituras recebidas na API; não é teste direto do cabo ou do Wi-Fi.")
     rssi = latest.get("rssi")
     avail = d["coverage"]
     interval = median_interval_s(df)
@@ -352,7 +382,7 @@ def quality_health(ctx, d):
     if rssi is not None and rssi < -80:
         banner("warn", "Sinal Wi-Fi ruim: aproxime o ESP32 do roteador para evitar falhas de envio.")
     if not df.empty and "rssi" in df and df["rssi"].notna().any():
-        plot(charts.rssi_chart(df, ctx.theme), "grafico_rssi")
+        plot(charts.rssi_chart(df, ctx.theme, ctx.font_scale), "grafico_rssi")
 
 
 def validation(ctx, d):
@@ -392,7 +422,7 @@ def validation(ctx, d):
 
     present = [q for q in QUANTITY_PT if q in set(df["quantity"])]
     q_sel = st.radio("Gráfico de", present, horizontal=True, key="val_q", format_func=lambda q: QUANTITY_PT[q][0])
-    plot(charts.validation_scatter(df, q_sel, ctx.theme), "val_scatter")
+    plot(charts.validation_scatter(df, q_sel, ctx.theme, ctx.font_scale), "val_scatter")
     table(validation_table(df).head(30))
     st.download_button("Baixar validação (CSV)", validation_csv(df), file_name=f"validacao_{ctx.device}.csv",
                        mime="text/csv", key="dl_val")
@@ -406,7 +436,8 @@ def validation(ctx, d):
 
 def model_tab(ctx, d):
     model = d["model"]
-    section("Modelo de detecção (Isolation Forest)", "network")
+    section("Detecção inteligente (Isolation Forest)", "network")
+    st.caption("O score do modelo sinaliza leituras incomuns; não representa probabilidade de defeito.")
     if model["ready"]:
         cards([
             ("Estado", "Treinado", "check"),

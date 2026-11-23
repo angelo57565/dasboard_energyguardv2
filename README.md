@@ -94,3 +94,11 @@ O dashboard **não diagnostica desvio/furto de energia nem calcula energia perdi
 consumo incomum é sinal de investigação, não prova de causa. A classificação
 se limita às últimas 200 ocorrências consultadas. A aba original de Anomalias,
 regras de Alertas e formulários permanecem preservados.
+
+
+### Diagnóstico automático sem alerta
+
+A aba **Tipos de anomalia** usa as leituras de `/api/readings` por padrão, mesmo
+sem regras, notificações, modelo treinado ou eventos salvos de anomalia. São
+verificações locais e somente de visualização; não enviam alertas nem modificam
+leituras. É possível alternar para as classificações já registradas pela API.

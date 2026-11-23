@@ -5,6 +5,7 @@ import streamlit as st
 from telemetry import plot_sample
 
 import charts
+from anomaly_insights import CATALOG, category, codes_for, detail_rows, overview_by_type
 from helpers import (
     COLUMNS_PT, NO_TYPE, QUANTITY_PT, TYPE_PT, anomalies_table, daily_consumption, fmt_pct,
     hourly_dataframe, human_age, median_interval_s, month_projection, primary_type, readings_csv,
@@ -247,6 +248,91 @@ def anomalies_tab(ctx, d):
                          "Remover rótulo": None}[choice]
                 if _guard(lambda: ctx.api.put(f"/api/readings/{int(rid)}/feedback", json={"label": label})):
                     banner("ok", f"Leitura #{int(rid)} atualizada.")
+
+
+
+def anomaly_types_tab(ctx, d):
+    """Readable differential classification for anomalies already detected by the backend."""
+    section("Tipos de anomalia identificados", "alert")
+    st.caption("Classificação indicativa baseada nas leituras e nos tipos informados pela API. "
+               "Uma mesma ocorrência pode ter mais de um tipo. Isso não comprova a causa da falha.")
+    anomalies = d["anomalies"]
+    if not anomalies:
+        banner("info", "Nenhuma anomalia disponível nas últimas 200 ocorrências consultadas.")
+        return
+
+    summary = overview_by_type(anomalies)
+    high = int(sum(1 for row in anomalies if any(
+        category(code)[1] == "Alta" for code in (codes_for(row) or [""])
+    )))
+    cards([
+        ("Ocorrências consultadas", str(len(anomalies)), "database"),
+        ("Para revisar com prioridade", str(high), "alert"),
+        ("Tipos encontrados", str(len(summary)), "bars"),
+    ])
+    st.caption("A prioridade é para triagem das leituras; não é uma avaliação automática do risco de dano "
+               "ou perigo elétrico. Consulta limitada às últimas 200 anomalias da API, "
+               "independentemente do período selecionado na barra lateral.")
+
+    section("Distribuição por tipo", "bars")
+    plot(charts.bars(summary["Tipo"], summary["Ocorrências"], ctx.theme,
+                     "Ocorrências classificadas", ytitle="ocorrências",
+                     font_scale=ctx.font_scale), "grafico_tipos_diagnostico")
+    table(summary.rename(columns={"Código da API": "Classificação técnica"}))
+
+    section("Investigar uma ocorrência", "target")
+    found_codes = summary["Código da API"].tolist()
+    choices = ["Todos os tipos", *found_codes]
+    selected = st.selectbox(
+        "Filtrar classificação", choices, key="diagnostico_tipo",
+        format_func=lambda code: "Todos os tipos" if code == "Todos os tipos"
+        else category("" if code == "sem_tipo" else code)[0]
+    )
+    selected_code = None if selected == "Todos os tipos" else (
+        "" if selected == "sem_tipo" else selected
+    )
+    details = detail_rows(anomalies, selected_code)
+    if details.empty:
+        banner("info", "Nenhuma ocorrência encontrada para esse filtro.")
+        return
+
+    table(details)
+    st.download_button(
+        "Baixar diagnóstico de anomalias (CSV)",
+        data=details.to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig"),
+        file_name=f"diagnostico_anomalias_{ctx.device}.csv", mime="text/csv",
+        key="download_diagnostico_anomalias"
+    )
+
+    records = [row for row in anomalies if selected_code is None or
+               selected_code in (codes_for(row) or [""])]
+    chosen_id = st.selectbox(
+        "Ver detalhes da leitura", range(len(records)), key="diagnostico_leitura",
+        format_func=lambda i: f"Leitura #{records[i].get('id', '—')} · "
+        f"{records[i].get('created_at', 'sem horário')}"
+    )
+    chosen = records[chosen_id]
+    labels = [category(code) for code in (codes_for(chosen) or [""])]
+    st.markdown("**Classificações registradas pela API**")
+    for label, priority, explanation, action in labels:
+        with st.expander(f"{label} · Prioridade: {priority}", expanded=True):
+            st.write(f"**O que indica:** {explanation}")
+            st.write(f"**O que verificar:** {action}")
+    why = reasons_text(chosen.get("reasons"))
+    if why:
+        st.write("**Indícios numéricos informados pelo modelo:**")
+        st.caption(why)
+    else:
+        st.caption("A API não informou motivos numéricos detalhados para essa leitura.")
+
+    banner("warn", "Consumo inesperado não comprova furto, desvio de energia nem defeito. "
+           "É necessária verificação técnica e, se aplicável, da concessionária.")
+    with st.expander("Quais classificações o sistema reconhece?"):
+        for code, (label, priority, explanation, action) in CATALOG.items():
+            st.markdown(f"**{label}** ({code}) · Triagem: {priority}")
+            st.caption(f"{explanation} {action}")
+        st.caption("Se a API enviar um código desconhecido, ele aparecerá como "
+                   "'Anomalia sem classificação técnica', preservando o código original.")
 
 
 def alerts_tab(ctx, d):

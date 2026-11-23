@@ -6,6 +6,7 @@ from telemetry import plot_sample
 
 import charts
 from anomaly_insights import CATALOG, category, codes_for, detail_rows, overview_by_type
+from reading_diagnostics import infer_reading_types
 from helpers import (
     COLUMNS_PT, NO_TYPE, QUANTITY_PT, TYPE_PT, anomalies_table, daily_consumption, fmt_pct,
     hourly_dataframe, human_age, median_interval_s, month_projection, primary_type, readings_csv,
@@ -252,87 +253,95 @@ def anomalies_tab(ctx, d):
 
 
 def anomaly_types_tab(ctx, d):
-    """Readable differential classification for anomalies already detected by the backend."""
-    section("Tipos de anomalia identificados", "alert")
-    st.caption("Classificação indicativa baseada nas leituras e nos tipos informados pela API. "
-               "Uma mesma ocorrência pode ter mais de um tipo. Isso não comprova a causa da falha.")
-    anomalies = d["anomalies"]
-    if not anomalies:
-        banner("info", "Nenhuma anomalia disponível nas últimas 200 ocorrências consultadas.")
+    """Read-only diagnosis from sensor readings, independent of notifications and stored alerts."""
+    section("Diagnóstico automático das medições", "alert")
+    st.caption("Esta aba avalia as leituras do ESP32 automaticamente, sem precisar criar regras "
+               "ou enviar alertas. São indícios para investigação, não diagnósticos confirmados.")
+    source = st.radio(
+        "Origem das informações",
+        ["Indícios nas medições (automático)", "Anomalias classificadas pela API"],
+        key="diagnostic_source", horizontal=True
+    )
+    automatic = source.startswith("Indícios")
+    rows = infer_reading_types(d["rows"], nominal_voltage=ctx.nominal) if automatic else d["anomalies"]
+    if automatic:
+        st.caption(f"Verificação local das leituras dos últimos {int(d['hours'] * 60)} minutos. "
+                   "Não depende de alertas, notificações ou treinamento do modelo. "
+                   "Os limites são indicativos e não certificados. "
+                   "Nenhum resultado é gravado no backend.")
+    else:
+        st.caption("Classificações já registradas pelo backend (até 200 ocorrências), "
+                   "sem depender do histórico de alertas ou de notificações.")
+
+    if not rows:
+        banner("info", "Nenhuma situação fora das verificações disponíveis nas leituras consultadas."
+               if automatic else "Nenhuma anomalia classificada pela API até o momento.")
+        if automatic and not d["rows"]:
+            st.caption("Não há leituras nesse período. Verifique o ESP32 e a API.")
+        elif automatic:
+            st.caption("Isso não garante ausência de falhas: o sistema verifica apenas as grandezas medidas.")
         return
 
-    summary = overview_by_type(anomalies)
-    high = int(sum(1 for row in anomalies if any(
-        category(code)[1] == "Alta" for code in (codes_for(row) or [""])
-    )))
+    summary = overview_by_type(rows)
+    high = sum(1 for row in rows if any(
+        category(code)[1] == "Alta" for code in codes_for(row)
+    ))
     cards([
-        ("Ocorrências consultadas", str(len(anomalies)), "database"),
-        ("Para revisar com prioridade", str(high), "alert"),
-        ("Tipos encontrados", str(len(summary)), "bars"),
+        ("Leituras com indícios" if automatic else "Ocorrências registradas", str(len(rows)), "database"),
+        ("Prioridade de triagem alta", str(high), "alert"),
+        ("Tipos observados", str(len(summary)), "bars"),
     ])
-    st.caption("A prioridade é para triagem das leituras; não é uma avaliação automática do risco de dano "
-               "ou perigo elétrico. Consulta limitada às últimas 200 anomalias da API, "
-               "independentemente do período selecionado na barra lateral.")
+    st.caption("A prioridade organiza a investigação; não mede risco de dano elétrico. "
+               "Uma leitura pode pertencer a mais de um tipo.")
 
-    section("Distribuição por tipo", "bars")
+    section("Tipos encontrados", "bars")
     plot(charts.bars(summary["Tipo"], summary["Ocorrências"], ctx.theme,
-                     "Ocorrências classificadas", ytitle="ocorrências",
+                     "Distribuição de tipos", ytitle="leituras",
                      font_scale=ctx.font_scale), "grafico_tipos_diagnostico")
-    table(summary.rename(columns={"Código da API": "Classificação técnica"}))
+    table(summary.rename(columns={"Código da API": "Código de classificação"}))
 
-    section("Investigar uma ocorrência", "target")
-    found_codes = summary["Código da API"].tolist()
-    choices = ["Todos os tipos", *found_codes]
-    selected = st.selectbox(
-        "Filtrar classificação", choices, key="diagnostico_tipo",
-        format_func=lambda code: "Todos os tipos" if code == "Todos os tipos"
-        else category("" if code == "sem_tipo" else code)[0]
-    )
+    section("Evidências por leitura", "target")
+    options = ["Todos os tipos", *summary["Código da API"].tolist()]
+    selected = st.selectbox("Filtrar tipo", options, key="diagnostico_tipo",
+                            format_func=lambda code: "Todos os tipos" if code == "Todos os tipos"
+                            else category("" if code == "sem_tipo" else code)[0])
     selected_code = None if selected == "Todos os tipos" else (
         "" if selected == "sem_tipo" else selected
     )
-    details = detail_rows(anomalies, selected_code)
+    details = detail_rows(rows, selected_code)
     if details.empty:
-        banner("info", "Nenhuma ocorrência encontrada para esse filtro.")
+        banner("info", "Nenhuma leitura encontrada.")
         return
-
     table(details)
     st.download_button(
-        "Baixar diagnóstico de anomalias (CSV)",
+        "Baixar diagnóstico (CSV)",
         data=details.to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig"),
-        file_name=f"diagnostico_anomalias_{ctx.device}.csv", mime="text/csv",
+        file_name=f"diagnostico_{ctx.device}.csv", mime="text/csv",
         key="download_diagnostico_anomalias"
     )
-
-    records = [row for row in anomalies if selected_code is None or
+    records = [row for row in rows if selected_code is None or
                selected_code in (codes_for(row) or [""])]
-    chosen_id = st.selectbox(
-        "Ver detalhes da leitura", range(len(records)), key="diagnostico_leitura",
-        format_func=lambda i: f"Leitura #{records[i].get('id', '—')} · "
-        f"{records[i].get('created_at', 'sem horário')}"
-    )
-    chosen = records[chosen_id]
-    labels = [category(code) for code in (codes_for(chosen) or [""])]
-    st.markdown("**Classificações registradas pela API**")
-    for label, priority, explanation, action in labels:
-        with st.expander(f"{label} · Prioridade: {priority}", expanded=True):
+    selected_row = st.selectbox("Detalhar leitura", range(len(records)), key="diagnostico_leitura",
+                                format_func=lambda i: f"Leitura #{records[i].get('id', '—')} · "
+                                f"{records[i].get('created_at', 'sem horário')}")
+    chosen = records[selected_row]
+    for code in (codes_for(chosen) or [""]):
+        label, priority, explanation, advice = category(code)
+        with st.expander(f"{label} · Triagem: {priority}", expanded=True):
             st.write(f"**O que indica:** {explanation}")
-            st.write(f"**O que verificar:** {action}")
-    why = reasons_text(chosen.get("reasons"))
-    if why:
-        st.write("**Indícios numéricos informados pelo modelo:**")
-        st.caption(why)
+            st.write(f"**O que verificar:** {advice}")
+    if automatic:
+        st.markdown("**Evidências medidas:**")
+        st.caption(chosen.get("diagnostic_evidence") or "Não há detalhes adicionais.")
     else:
-        st.caption("A API não informou motivos numéricos detalhados para essa leitura.")
-
-    banner("warn", "Consumo inesperado não comprova furto, desvio de energia nem defeito. "
-           "É necessária verificação técnica e, se aplicável, da concessionária.")
-    with st.expander("Quais classificações o sistema reconhece?"):
-        for code, (label, priority, explanation, action) in CATALOG.items():
-            st.markdown(f"**{label}** ({code}) · Triagem: {priority}")
-            st.caption(f"{explanation} {action}")
-        st.caption("Se a API enviar um código desconhecido, ele aparecerá como "
-                   "'Anomalia sem classificação técnica', preservando o código original.")
+        why = reasons_text(chosen.get("reasons"))
+        st.caption(why or "O backend não informou evidências numéricas detalhadas.")
+    banner("warn", "Consumo fora do padrão não comprova desvio/furto de energia, "
+           "interrupção da concessionária ou dano em aparelhos.")
+    with st.expander("Entenda todas as categorias"):
+        for code, (label, priority, evidence, advice) in CATALOG.items():
+            st.markdown(f"**{label}** · Triagem {priority}")
+            st.caption(f"{evidence} {advice}")
 
 
 def alerts_tab(ctx, d):

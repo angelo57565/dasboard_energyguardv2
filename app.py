@@ -173,7 +173,7 @@ def render() -> None:
                 coverage=coverage, short_window=hours < 1, connection=connection)
 
     t = st.tabs(["Visão geral", "Medições", "Consumo", f"Anomalias ({len(anomalies)})",
-                 "Tipos de anomalia", "Alertas", "Sistema"])
+                 "Tipos de anomalia", "Ocorrências", "Alertas", "Sistema"])
     with t[0]:
         tabs.overview(ctx, data)
     with t[1]:
@@ -185,8 +185,10 @@ def render() -> None:
     with t[4]:
         tabs.anomaly_types_tab(ctx, data)
     with t[5]:
-        tabs.alerts_tab(ctx, data)
+        tabs.events_tab(ctx, data)
     with t[6]:
+        tabs.alerts_tab(ctx, data)
+    with t[7]:
         tabs.system_tab(ctx, data)
 
 

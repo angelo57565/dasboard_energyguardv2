@@ -2,6 +2,8 @@ import pandas as pd
 import requests
 import streamlit as st
 
+from telemetry import plot_sample
+
 import charts
 from helpers import (
     NO_TYPE, QUANTITY_PT, TYPE_PT, anomalies_table, availability_pct, daily_consumption, fmt_pct,
@@ -77,7 +79,7 @@ def overview(ctx, d):
         ("Energia total", f"{latest['energy']:.3f} kWh", "database"),
     ])
 
-    section(f"Resumo das últimas {hours_int} h", "bars")
+    section(f"Resumo dos últimos 15 minutos" if d["short_window"] else f"Resumo das últimas {hours_int} h", "bars")
     kwh = summary["energy_kwh"] or 0.0
     cards([
         ("Consumo", f"{kwh:.3f} kWh", "bars"),
@@ -97,7 +99,7 @@ def charts_tab(ctx, d):
     if df.empty:
         banner("info", "Sem leituras neste período.")
         return
-    plot(charts.timeseries(df, which, mark, ctx.theme), "grafico")
+    plot(charts.timeseries(plot_sample(df), which, mark, ctx.theme), "grafico")
     st.download_button("Baixar leituras (CSV)", readings_csv(rows),
                        file_name=f"leituras_{ctx.device}.csv", mime="text/csv", key="dl_leituras")
 
@@ -116,6 +118,7 @@ def consumption(ctx, d):
     now = pd.Timestamp.now(tz=SP)
     today, y_same, y_total = today_vs_yesterday(hourly, now)
     so_far, projected, _days = month_projection(hourly, now)
+    projection_ready = pd.notna(projected)
 
     delta = f"{(today - y_same) / y_same * 100:+.0f}% vs ontem" if y_same > 0.001 else "—"
     section("Hoje", "clock")
@@ -129,14 +132,16 @@ def consumption(ctx, d):
     section("Mês", "bars")
     cards([
         ("Consumo no mês", f"{so_far:.2f} kWh", "bars"),
-        ("Projeção do mês", f"{projected:.1f} kWh", "chart"),
+        ("Projeção do mês", f"{projected:.1f} kWh" if projection_ready else "Dados insuficientes", "chart"),
         ("Custo até agora", f"R$ {so_far * ctx.tariff:.2f}", "dollar"),
-        ("Custo projetado", f"R$ {projected * ctx.tariff:.2f}", "dollar"),
+        ("Custo projetado", f"R$ {projected * ctx.tariff:.2f}" if projection_ready else "—", "dollar"),
     ])
     if ctx.goal > 0:
         frac = so_far / ctx.goal
         progress(frac, f"Meta de {ctx.goal:.0f} kWh: {so_far:.1f} kWh usados ({frac * 100:.0f}%)")
-        if projected > ctx.goal:
+        if not projection_ready:
+            banner("warn", "Histórico insuficiente no início do mês para projetar o consumo.")
+        elif projected > ctx.goal:
             banner("warn", f"Nesse ritmo você chega a {projected:.1f} kWh e passa da meta de {ctx.goal:.0f} kWh.")
         else:
             banner("ok", f"Nesse ritmo você fecha o mês com {projected:.1f} kWh, dentro da meta.")
@@ -154,8 +159,8 @@ def anomalies_tab(ctx, d):
     df, anomalies = d["df"], d["anomalies"]
     if not d["model"]["ready"]:
         banner("warn", "O modelo ainda não foi treinado, então nada foi classificado. Veja Sistema, aba Modelo.")
-    if not df.empty and df["anomaly_score"].notna().any():
-        plot(charts.score_chart(df, ctx.theme), "grafico_score")
+    if not df.empty and "anomaly_score" in df and df["anomaly_score"].notna().any():
+        plot(charts.score_chart(plot_sample(df), ctx.theme), "grafico_score")
 
     if not anomalies:
         banner("info", "Nenhuma anomalia registrada.")
@@ -263,7 +268,16 @@ def alerts_tab(ctx, d):
             {"name": "Frequência baixa", "metric": "frequency", "operator": "<", "threshold": 59.5},
             {"name": "Frequência alta", "metric": "frequency", "operator": ">", "threshold": 60.5},
         ]
-        if _guard(lambda: [ctx.api.post("/api/alerts/rules", json={**base, **r}) for r in suggested]):
+        existing = {(r["metric"], r["operator"], float(r["threshold"]), r.get("device_id")) for r in rules}
+        pending = [r for r in suggested if (r["metric"], r["operator"], float(r["threshold"]), None) not in existing]
+        created = 0
+        for rule in pending:
+            if not _guard(lambda rule=rule: ctx.api.post("/api/alerts/rules", json={**base, **rule})):
+                banner("warn", f"{created} regras criadas antes da falha. Confira as regras antes de tentar novamente.")
+                break
+            created += 1
+        else:
+            banner("ok", f"{created} regras criadas; {len(suggested) - created} já existentes.")
             rerun(ctx.auto)
 
     with st.expander("Nova regra"):
@@ -301,7 +315,7 @@ def quality_health(ctx, d):
 
     section(f"Qualidade da energia · últimas {hours_int} h", "wave")
     try:
-        q = ctx.api.cached_get("/api/quality", device_id=ctx.device, hours=hours_int, vmin=vmin, vmax=vmax)
+        q = None if d["short_window"] else ctx.api.cached_get("/api/quality", device_id=ctx.device, hours=hours_int, vmin=vmin, vmax=vmax)
     except requests.RequestException as exc:
         banner("danger", f"Erro ao consultar a qualidade: {exc}")
         q = None
@@ -317,18 +331,20 @@ def quality_health(ctx, d):
             ("Frequência fora de 59,5–60,5 Hz", fmt_pct(f["out_pct"]), "alert"),
         ])
         st.caption(f"Faixa adequada para {ctx.nominal} V: {vmin:g} a {vmax:g} V. Mude a tensão nominal em Configurações.")
+    elif d["short_window"]:
+        banner("info", "Indicadores de qualidade da API disponíveis para períodos a partir de 1 hora.")
     elif q:
         banner("info", "Sem leituras com a rede ligada neste período.")
 
     section("Saúde do ESP32", "cpu")
     rssi = latest.get("rssi")
-    avail = availability_pct(len(d["rows"]), d["hours"], ctx.interval)
+    avail = d["coverage"]
     interval = median_interval_s(df)
     cards([
         ("Sinal Wi-Fi", f"{rssi} dBm ({rssi_label(rssi)})" if rssi is not None else "—", "wifi"),
         ("Ligado há", human_age(latest["uptime_s"]) if latest.get("uptime_s") is not None else "—", "clock"),
         ("Falhas de envio", str(latest["send_failures"]) if latest.get("send_failures") is not None else "—", "alert"),
-        ("Disponibilidade", f"{avail:.0f}%", "check"),
+        ("Cobertura de leituras", f"{avail:.0f}%", "check"),
         ("Intervalo entre leituras", f"{interval:.1f} s" if interval else "—", "clock"),
     ])
     if latest.get("uptime_s") is not None and latest["uptime_s"] < 120:

@@ -2,12 +2,20 @@
 import requests
 import streamlit as st
 
+from contracts import validate_response
+
 
 def _request(base: str, key: str, method: str, path: str, params=None, json=None):
     headers = {"X-API-Key": key} if key else {}
     resp = requests.request(method, base + path, params=params, json=json, headers=headers, timeout=8)
     resp.raise_for_status()
-    return None if resp.status_code == 204 or not resp.content else resp.json()
+    if resp.status_code == 204 or not resp.content:
+        return None
+    try:
+        payload = resp.json()
+    except ValueError as exc:
+        raise requests.RequestException(f"JSON inválido em {path}") from exc
+    return validate_response(path, payload)
 
 
 @st.cache_data(ttl=30, show_spinner=False)

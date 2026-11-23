@@ -58,3 +58,24 @@ dashboard atual. Nunca atribuir culpa a pessoas.
 5. Se a API falhar, o dashboard mantém o tratamento de erro anterior.
 6. Rotulagem, treinamento, regras e downloads anteriores continuam funcionando.
 7. Não inferir furto, dano, causa física ou energia perdida sem evidência.
+
+
+## Diagnóstico automático independente de alertas
+
+O modo padrão da aba é **Indícios nas medições (automático)**: usa as leituras
+que já alimentam a aba Medições, do período selecionado pelo usuário. Não
+exige a existência de regras, notificações, registros em `/api/anomalies`
+ou treinamento do modelo. Mesmo se a API de anomalias falhar, a aba continua
+funcionando com `/api/readings`, desde que esse endpoint esteja acessível.
+
+O algoritmo `reading_diagnostics.infer_reading_types` usa critérios de triagem,
+sem persistir resultados ou emitir notificações: tensão nominal 127 V (faixa
+117–133 V) ou 220 V (202–231 V); frequência 59,5–60,5 Hz; FP abaixo de 0,7
+quando há carga; queda de tensão após leitura normal; grandeza negativa ou
+potência ativa acima da aparente com margem; e variações extremas de potência
+ou corrente em relação à mediana de pelo menos 12 amostras anteriores. Esses
+valores não são normas de conformidade nem limites de proteção.
+
+Com o seletor de origem, ainda é possível ver **Anomalias classificadas pela
+API** como antes. O painel não cria `/api/alerts/*`, não escreve no backend
+e não confunde indicativo com diagnóstico. Sem leituras, exibe estado vazio.

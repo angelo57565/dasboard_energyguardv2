@@ -148,8 +148,14 @@ def render() -> None:
         st.session_state["_readings_cache"] = {"key": cache_key, "rows": rows}
         df = to_dataframe(rows)
         summary = short_summary(df) if hours < 1 else api.get("/api/summary", device_id=device, hours=hours_int)
-        anomalies = api.get("/api/anomalies", device_id=device, limit=200)
-        model = api.get("/api/model/status")
+        try:
+            anomalies = api.get("/api/anomalies", device_id=device, limit=200)
+        except requests.RequestException:
+            anomalies = []
+        try:
+            model = api.get("/api/model/status")
+        except requests.RequestException:
+            model = {"ready": False}
     except requests.RequestException as exc:
         ui.connection_panel(None, api_error=True)
         ui.banner("danger", f"Erro ao consultar a API: {exc}")
@@ -166,7 +172,8 @@ def render() -> None:
                 model=model, hours=hours, hours_int=hours_int, age=age, online=online,
                 coverage=coverage, short_window=hours < 1, connection=connection)
 
-    t = st.tabs(["Visão geral", "Medições", "Consumo", f"Anomalias ({len(anomalies)})", "Alertas", "Sistema"])
+    t = st.tabs(["Visão geral", "Medições", "Consumo", f"Anomalias ({len(anomalies)})",
+                 "Tipos de anomalia", "Alertas", "Sistema"])
     with t[0]:
         tabs.overview(ctx, data)
     with t[1]:
@@ -176,8 +183,10 @@ def render() -> None:
     with t[3]:
         tabs.anomalies_tab(ctx, data)
     with t[4]:
-        tabs.alerts_tab(ctx, data)
+        tabs.anomaly_types_tab(ctx, data)
     with t[5]:
+        tabs.alerts_tab(ctx, data)
+    with t[6]:
         tabs.system_tab(ctx, data)
 
 

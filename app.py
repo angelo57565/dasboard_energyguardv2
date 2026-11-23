@@ -148,8 +148,14 @@ def render() -> None:
         st.session_state["_readings_cache"] = {"key": cache_key, "rows": rows}
         df = to_dataframe(rows)
         summary = short_summary(df) if hours < 1 else api.get("/api/summary", device_id=device, hours=hours_int)
-        anomalies = api.get("/api/anomalies", device_id=device, limit=200)
-        model = api.get("/api/model/status")
+        try:
+            anomalies = api.get("/api/anomalies", device_id=device, limit=200)
+        except requests.RequestException:
+            anomalies = []
+        try:
+            model = api.get("/api/model/status")
+        except requests.RequestException:
+            model = {"ready": False}
     except requests.RequestException as exc:
         ui.connection_panel(None, api_error=True)
         ui.banner("danger", f"Erro ao consultar a API: {exc}")

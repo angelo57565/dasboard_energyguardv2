@@ -102,3 +102,16 @@ A aba **Tipos de anomalia** usa as leituras de `/api/readings` por padrão, mesm
 sem regras, notificações, modelo treinado ou eventos salvos de anomalia. São
 verificações locais e somente de visualização; não enviam alertas nem modificam
 leituras. É possível alternar para as classificações já registradas pela API.
+
+
+## Ocorrências e qualidade de energia
+
+A aba **Ocorrências** oferece seis análises independentes de alertas e modelo:
+histórico de possíveis quedas de tensão, picos elétricos, linha do tempo,
+comunicação/sensores do ESP32, comparação da potência habitual e resumo de
+qualidade de tensão e frequência. Há tabelas e download CSV.
+
+A duração corresponde ao intervalo **observado entre amostras**, não à duração
+real comprovada da falha. Falhas de comunicação são mostradas separadamente de
+quedas de tensão. Comparações utilizam potência mediana das leituras, não energia
+faturada. Consulte [limites e critérios técnicos](docs/EVENTS_AND_QUALITY.md).

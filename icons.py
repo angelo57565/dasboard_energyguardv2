@@ -28,7 +28,7 @@ _PATHS = {
     "dollar": '<circle cx="12" cy="12" r="9"/><path d="M14.5 9.5c-.5-1-1.5-1.5-2.5-1.5-1.4 0-2.5.8-2.5 2s1.1 1.7 2.5 2 2.5.8 2.5 2-1.1 2-2.5 2c-1 0-2-.5-2.5-1.5M12 6v2M12 16v2"/>',
 }
 
-TAB_ICONS = ["home", "chart", "bars", "alert", "bell", "cpu"]
+TAB_ICONS = ["home", "chart", "bars", "alert", "target", "bell", "cpu"]
 
 
 def svg(name: str, size: int = 20, cls: str = "eg-ico") -> str:

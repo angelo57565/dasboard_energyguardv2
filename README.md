@@ -82,3 +82,15 @@ Na barra lateral em **Aparência**, alterne **Escuro/Claro**, escolha a letra **
 O cabeçalho informa **ESP32 enviando leituras**, **com atraso** ou **sem novas leituras**, com base no horário da última leitura registrada na API. Isso não é uma medição física direta do estado do ESP32. Quando a API falha, o estado é indeterminado, não offline confirmado.
 
 O redesign preserva as seis abas, operações de alertas, avaliações de anomalias, validações, treinamento e os downloads CSV. A **Visão geral** e **Medições** ganharam tabelas nativas; **Consumo** possui tabelas horárias e diárias. Testes de regressão de apresentação em `tests/test_presentation.py`.
+
+
+## Tipos de anomalia e diagnóstico explicativo
+
+A aba **Tipos de anomalia** apresenta as classificações recebidas da API,
+com prioridade de triagem, tabela de ocorrências, filtros, valores elétricos,
+orientações de conferência e download CSV. Consulte a [especificação de tipos](docs/ANOMALY_TYPES.md).
+
+O dashboard **não diagnostica desvio/furto de energia nem calcula energia perdida**:
+consumo incomum é sinal de investigação, não prova de causa. A classificação
+se limita às últimas 200 ocorrências consultadas. A aba original de Anomalias,
+regras de Alertas e formulários permanecem preservados.

@@ -5,6 +5,9 @@ import streamlit as st
 from telemetry import plot_sample
 
 import charts
+from event_analysis import (
+    device_diagnostics, event_table, extract_events, quality_report, usual_consumption,
+)
 from anomaly_insights import CATALOG, category, codes_for, detail_rows, overview_by_type
 from reading_diagnostics import infer_reading_types
 from helpers import (
@@ -342,6 +345,112 @@ def anomaly_types_tab(ctx, d):
         for code, (label, priority, evidence, advice) in CATALOG.items():
             st.markdown(f"**{label}** · Triagem {priority}")
             st.caption(f"{evidence} {advice}")
+
+
+
+def events_tab(ctx, d):
+    """Six read-only operational insights derived from the current period's telemetry."""
+    section("Histórico de ocorrências elétricas", "alert")
+    st.caption("Reconstrução de episódios a partir de leituras do ESP32. Não depende de alertas "
+               "nem de notificações. Duração é o intervalo entre a primeira e a última amostra "
+               "observadas, e não necessariamente a duração real de uma falha.")
+    rows = d["rows"]
+    if not rows:
+        banner("info", "Sem leituras no período selecionado para reconstruir ocorrências.")
+        return
+
+    events = extract_events(rows, ctx.nominal, ctx.interval)
+    outages = [e for e in events if e["Código"] == "queda"]
+    peaks = [e for e in events if e["Código"] in ("sobretensao", "sobrecorrente", "consumo_elevado")]
+    gaps = [e for e in events if e["Código"] == "comunicacao"]
+    cards([
+        ("Possíveis quedas de tensão", str(len(outages)), "power"),
+        ("Picos identificados", str(len(peaks)), "bolt"),
+        ("Lacunas na telemetria", str(len(gaps)), "wifi"),
+        ("Ocorrências no período", str(len(events)), "alert"),
+    ])
+
+    section("Quedas de tensão observadas", "power")
+    st.caption("Queda observada em amostras de tensão pode indicar interrupção ou problema "
+               "de sensor; não comprova falha na concessionária. Se o ESP32 perdeu alimentação, "
+               "não é possível recuperar a duração exata da interrupção.")
+    if outages:
+        table(event_table(outages))
+    else:
+        banner("info", "Não foram observadas amostras de queda de tensão neste período.")
+
+    section("Detalhes dos picos elétricos", "bolt")
+    st.caption("Valores máximos de tensão, corrente e potência e intervalo amostrado. "
+               "Uma amostra isolada tem duração observada zero, não significa que o pico "
+               "durou zero segundos.")
+    if peaks:
+        table(event_table(peaks))
+    else:
+        banner("info", "Nenhum pico encontrado pelos critérios de triagem deste período.")
+
+    section("Linha do tempo das ocorrências", "clock")
+    if events:
+        display = event_table(events)
+        table(display)
+        st.download_button(
+            "Baixar histórico de ocorrências (CSV)",
+            display.to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig"),
+            file_name=f"ocorrencias_{ctx.device}.csv", mime="text/csv",
+            key="download_eventos"
+        )
+    else:
+        banner("info", "Nenhuma ocorrência identificada nos dados disponíveis.")
+
+    section("Diagnóstico de comunicação e sensores do ESP32", "cpu")
+    health = device_diagnostics(rows, ctx.interval)
+    cards([
+        ("Telemetria", health["state"], "wifi"),
+        ("Intervalos sem leitura", str(health["gap_count"]), "clock"),
+        ("Amostras sem grandezas válidas", str(health["invalid"]), "alert"),
+    ])
+    st.caption("A falta de leituras pode resultar de Wi-Fi, ESP32, sensor, backend ou "
+               "outros problemas de transmissão; não confirma perda de energia elétrica.")
+
+    section("Consumo em relação ao habitual", "bars")
+    comparison = usual_consumption(rows)
+    if comparison["available"]:
+        delta = comparison["change_pct"]
+        cards([
+            ("Potência mediana anterior", f"{comparison['before']:.0f} W", "gauge"),
+            ("Potência mediana recente", f"{comparison['after']:.0f} W", "bolt"),
+            ("Mudança relativa", f"{delta:+.1f}%" if delta is not None else "Indefinida", "chart"),
+        ])
+        st.caption(comparison["note"])
+    else:
+        banner("info", comparison["reason"])
+
+    section("Relatório de qualidade da energia", "wave")
+    report = quality_report(rows, events)
+    cards([
+        ("Leituras válidas por horário", str(report["samples"]), "database"),
+        ("Tipos de ocorrência", str(len(report["events"])), "bars"),
+    ])
+    quality = []
+    for key, name, unit in (("voltage", "Tensão", "V"), ("frequency", "Frequência", "Hz")):
+        numbers = report[key]
+        if numbers is not None:
+            quality.append({"Grandeza": name, "Mínimo": round(numbers["mínimo"], 2),
+                            "Média": round(numbers["média"], 2),
+                            "Máximo": round(numbers["máximo"], 2), "Unidade": unit})
+    if quality:
+        table(pd.DataFrame(quality))
+    else:
+        banner("info", "Não há valores válidos suficientes para o resumo de tensão/frequência.")
+    if report["events"]:
+        table(pd.DataFrame([{"Tipo": name, "Ocorrências": count}
+                            for name, count in report["events"].items()]))
+    st.caption(report["note"])
+    st.download_button(
+        "Baixar relatório de qualidade (CSV)",
+        pd.DataFrame(quality).to_csv(index=False, sep=";", decimal=",").encode("utf-8-sig"),
+        file_name=f"qualidade_energia_{ctx.device}.csv", mime="text/csv",
+        key="download_qualidade"
+    )
 
 
 def alerts_tab(ctx, d):

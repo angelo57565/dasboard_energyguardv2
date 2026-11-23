@@ -12,7 +12,8 @@ import tabs
 import ui
 from auth import logout_button, require_login
 from client import Api
-from helpers import age_seconds, to_dataframe
+from helpers import age_seconds, reporting_coverage, short_summary, to_dataframe
+from telemetry import incremental_readings
 from theme import build_css
 
 ASSETS = Path(__file__).parent / "assets"
@@ -51,7 +52,11 @@ with st.sidebar:
 with brand_slot:
     ui.brand()
 
-if "cfg_ready" not in st.session_state:
+if st.session_state.get("cfg_source") != api_url:
+    st.session_state["cfg_source"] = api_url
+    st.session_state["cfg_ready"] = False
+
+if not st.session_state.get("cfg_ready"):
     cfg = {"tariff": 0.90, "nominal_voltage": 127, "monthly_goal_kwh": 0.0, "send_interval_s": 5}
     try:
         cfg.update(api.get("/api/settings"))
@@ -79,6 +84,7 @@ with config_slot:
                 "monthly_goal_kwh": float(st.session_state.cfg_goal),
                 "send_interval_s": float(st.session_state.cfg_interval),
             })
+            st.session_state["cfg_ready"] = False
             st.success("Configurações salvas.")
         except requests.RequestException as exc:
             st.error(f"Não consegui salvar: {exc}")
@@ -114,12 +120,18 @@ ctx = SimpleNamespace(
 
 
 def render() -> None:
-    hours_int = max(1, int(round(hours)))
-    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    hours_int = max(1, int(hours))
+    since_dt = datetime.now(timezone.utc) - timedelta(hours=hours)
+    since = since_dt.isoformat()
     try:
         latest = api.get("/api/readings/latest", device_id=device)
-        rows = api.get("/api/readings", device_id=device, limit=20000, since=since)
-        summary = api.get("/api/summary", device_id=device, hours=hours_int)
+        cache_key = (api_url, device, period_label)
+        cached = st.session_state.get("_readings_cache", {})
+        old = cached.get("rows") if cached.get("key") == cache_key else None
+        rows = incremental_readings(api, device, since, old)
+        st.session_state["_readings_cache"] = {"key": cache_key, "rows": rows}
+        df = to_dataframe(rows)
+        summary = short_summary(df) if hours < 1 else api.get("/api/summary", device_id=device, hours=hours_int)
         anomalies = api.get("/api/anomalies", device_id=device, limit=200)
         model = api.get("/api/model/status")
     except requests.RequestException as exc:
@@ -127,11 +139,13 @@ def render() -> None:
         return
 
     age = age_seconds(latest["created_at"])
-    online = age <= OFFLINE_AFTER_S
+    online = age <= max(OFFLINE_AFTER_S, float(st.session_state.cfg_interval) * 3)
     ui.header(device, online, datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%H:%M:%S"))
 
-    data = dict(latest=latest, rows=rows, df=to_dataframe(rows), summary=summary, anomalies=anomalies,
-                model=model, hours=hours, hours_int=hours_int, age=age, online=online)
+    coverage = reporting_coverage(df, since_dt, datetime.now(timezone.utc), ctx.interval)
+    data = dict(latest=latest, rows=rows, df=df, summary=summary, anomalies=anomalies,
+                model=model, hours=hours, hours_int=hours_int, age=age, online=online,
+                coverage=coverage, short_window=hours < 1)
 
     t = st.tabs(["Início", "Gráficos", "Consumo", f"Anomalias ({len(anomalies)})", "Alertas", "Sistema"])
     with t[0]:

@@ -62,8 +62,8 @@ input, textarea { -webkit-text-fill-color: $text !important; }
 .stButton > button:disabled, .stDownloadButton > button:disabled { opacity: .65; }
 :focus-visible { outline: 3px solid $focus !important; outline-offset: 2px; }
 
-[data-testid="stTabs"] [role="tablist"] { gap: 4px; border-bottom: $bw solid $border; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-[data-testid="stTabs"] button[role="tab"] { padding: 10px 14px; border-radius: 10px 10px 0 0; transition: background .15s ease; }
+[data-testid="stTabs"] [role="tablist"] { gap: 14px; border-bottom: $bw solid $border; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; scroll-padding-inline: 12px; }
+[data-testid="stTabs"] button[role="tab"] { padding: 12px 20px; min-height: 48px; flex-shrink: 0; white-space: nowrap; border-radius: 10px 10px 0 0; transition: background .15s ease; }
 [data-testid="stTabs"] button[role="tab"]:hover { background: $surface2; }
 [data-testid="stTabs"] button[role="tab"] p { color: $muted !important; font-weight: 700; margin: 0; }
 [data-testid="stTabs"] button[role="tab"][aria-selected="true"] p { color: $text !important; }
@@ -222,6 +222,8 @@ html, body, .stApp { font-size: VAR_FONT_SIZE !important; }
 [data-testid="stDataFrame"] { border: 1px solid VAR_BORDER; border-radius: 12px; overflow: hidden; }
 [data-testid="stSidebar"] [data-testid="stWidgetLabel"] { font-weight: 700; }
 @media (max-width: 640px) {
+  [data-testid="stTabs"] [role="tablist"] { gap: 8px; }
+  [data-testid="stTabs"] button[role="tab"] { padding: 12px 14px; min-height: 46px; }
   .eg-header { padding: 14px; }
   .eg-status { min-height: auto; }
   .eg-hero { grid-template-columns: 1fr; }
